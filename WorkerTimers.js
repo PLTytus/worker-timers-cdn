@@ -63,7 +63,7 @@ var WorkerTimers = (function (exports) {
     };
 
     const isClearResponse = (message) => {
-        return message.error === null && typeof message.id === 'number';
+        return typeof message.id === 'number' && typeof message.result === 'boolean';
     };
 
     const load = (url) => {
@@ -77,6 +77,9 @@ var WorkerTimers = (function (exports) {
                 const { params: { timerId, timerType } } = data;
                 if (timerType === 'interval') {
                     const idOrFunc = scheduledIntervalFunctions.get(timerId);
+                    if (typeof idOrFunc === undefined) {
+                        throw new Error('The timer is in an undefined state.');
+                    }
                     if (typeof idOrFunc === 'number') {
                         const timerIdAndTimerType = unrespondedRequests.get(idOrFunc);
                         if (timerIdAndTimerType === undefined ||
@@ -85,15 +88,15 @@ var WorkerTimers = (function (exports) {
                             throw new Error('The timer is in an undefined state.');
                         }
                     }
-                    else if (typeof idOrFunc !== 'undefined') {
+                    else if (typeof idOrFunc === 'function') {
                         idOrFunc();
-                    }
-                    else {
-                        throw new Error('The timer is in an undefined state.');
                     }
                 }
                 else if (timerType === 'timeout') {
                     const idOrFunc = scheduledTimeoutFunctions.get(timerId);
+                    if (typeof idOrFunc === undefined) {
+                        throw new Error('The timer is in an undefined state.');
+                    }
                     if (typeof idOrFunc === 'number') {
                         const timerIdAndTimerType = unrespondedRequests.get(idOrFunc);
                         if (timerIdAndTimerType === undefined ||
@@ -102,13 +105,10 @@ var WorkerTimers = (function (exports) {
                             throw new Error('The timer is in an undefined state.');
                         }
                     }
-                    else if (typeof idOrFunc !== 'undefined') {
+                    else if (typeof idOrFunc === 'function') {
                         idOrFunc();
                         // A timeout can be savely deleted because it is only called once.
                         scheduledTimeoutFunctions.delete(timerId);
-                    }
-                    else {
-                        throw new Error('The timer is in an undefined state.');
                     }
                 }
             }
@@ -133,24 +133,28 @@ var WorkerTimers = (function (exports) {
             }
         });
         const clearInterval = (timerId) => {
-            const id = generateUniqueNumber(unrespondedRequests);
-            unrespondedRequests.set(id, { timerId, timerType: 'interval' });
-            scheduledIntervalFunctions.set(timerId, id);
-            worker.postMessage({
-                id,
-                method: 'clear',
-                params: { timerId, timerType: 'interval' }
-            });
+            if (typeof scheduledIntervalFunctions.get(timerId) === 'function') {
+                const id = generateUniqueNumber(unrespondedRequests);
+                unrespondedRequests.set(id, { timerId, timerType: 'interval' });
+                scheduledIntervalFunctions.set(timerId, id);
+                worker.postMessage({
+                    id,
+                    method: 'clear',
+                    params: { timerId, timerType: 'interval' }
+                });
+            }
         };
         const clearTimeout = (timerId) => {
-            const id = generateUniqueNumber(unrespondedRequests);
-            unrespondedRequests.set(id, { timerId, timerType: 'timeout' });
-            scheduledTimeoutFunctions.set(timerId, id);
-            worker.postMessage({
-                id,
-                method: 'clear',
-                params: { timerId, timerType: 'timeout' }
-            });
+            if (typeof scheduledTimeoutFunctions.get(timerId) === 'function') {
+                const id = generateUniqueNumber(unrespondedRequests);
+                unrespondedRequests.set(id, { timerId, timerType: 'timeout' });
+                scheduledTimeoutFunctions.set(timerId, id);
+                worker.postMessage({
+                    id,
+                    method: 'clear',
+                    params: { timerId, timerType: 'timeout' }
+                });
+            }
         };
         const setInterval = (func, delay = 0) => {
             const timerId = generateUniqueNumber(scheduledIntervalFunctions);
@@ -163,7 +167,7 @@ var WorkerTimers = (function (exports) {
                         method: 'set',
                         params: {
                             delay,
-                            now: performance.now(),
+                            now: performance.timeOrigin + performance.now(),
                             timerId,
                             timerType: 'interval'
                         }
@@ -175,7 +179,7 @@ var WorkerTimers = (function (exports) {
                 method: 'set',
                 params: {
                     delay,
-                    now: performance.now(),
+                    now: performance.timeOrigin + performance.now(),
                     timerId,
                     timerType: 'interval'
                 }
@@ -190,7 +194,7 @@ var WorkerTimers = (function (exports) {
                 method: 'set',
                 params: {
                     delay,
-                    now: performance.now(),
+                    now: performance.timeOrigin + performance.now(),
                     timerId,
                     timerType: 'timeout'
                 }
@@ -221,7 +225,7 @@ var WorkerTimers = (function (exports) {
     };
 
     // This is the minified and stringified code of the worker-timers-worker package.
-    const worker = `(()=>{"use strict";const e=new Map,t=new Map,r=(e,t)=>{let r,o;const i=performance.now();r=i,o=e-Math.max(0,i-t);return{expected:r+o,remainingDelay:o}},o=(e,t,r,i)=>{const s=performance.now();s>r?postMessage({id:null,method:"call",params:{timerId:t,timerType:i}}):e.set(t,setTimeout(o,r-s,e,t,r,i))};addEventListener("message",(i=>{let{data:s}=i;try{if("clear"===s.method){const{id:r,params:{timerId:o,timerType:i}}=s;if("interval"===i)(t=>{const r=e.get(t);if(void 0===r)throw new Error('There is no interval scheduled with the given id "'.concat(t,'".'));clearTimeout(r),e.delete(t)})(o),postMessage({error:null,id:r});else{if("timeout"!==i)throw new Error('The given type "'.concat(i,'" is not supported'));(e=>{const r=t.get(e);if(void 0===r)throw new Error('There is no timeout scheduled with the given id "'.concat(e,'".'));clearTimeout(r),t.delete(e)})(o),postMessage({error:null,id:r})}}else{if("set"!==s.method)throw new Error('The given method "'.concat(s.method,'" is not supported'));{const{params:{delay:i,now:n,timerId:a,timerType:d}}=s;if("interval"===d)((t,i,s)=>{const{expected:n,remainingDelay:a}=r(t,s);e.set(i,setTimeout(o,a,e,i,n,"interval"))})(i,a,n);else{if("timeout"!==d)throw new Error('The given type "'.concat(d,'" is not supported'));((e,i,s)=>{const{expected:n,remainingDelay:a}=r(e,s);t.set(i,setTimeout(o,a,t,i,n,"timeout"))})(i,a,n)}}}}catch(e){postMessage({error:{message:e.message},id:s.id,result:null})}}))})();`; // tslint:disable-line:max-line-length
+    const worker = `(()=>{"use strict";const e=new Map,t=new Map,r=t=>{const r=e.get(t);return void 0!==r&&(clearTimeout(r),e.delete(t),!0)},s=e=>{const r=t.get(e);return void 0!==r&&(clearTimeout(r),t.delete(e),!0)},o=(e,t)=>{const r=performance.now(),s=e+t-r-performance.timeOrigin;return{expected:r+s,remainingDelay:s}},i=(e,t,r,s)=>{const o=r-performance.now();o>0?e.set(t,setTimeout(i,o,e,t,r,s)):(e.delete(t),postMessage({id:null,method:"call",params:{timerId:t,timerType:s}}))};addEventListener("message",(n=>{let{data:a}=n;try{if("clear"===a.method){const{id:e,params:{timerId:t,timerType:o}}=a;if("interval"===o)postMessage({id:e,result:r(t)});else{if("timeout"!==o)throw new Error('The given type "'.concat(o,'" is not supported'));postMessage({id:e,result:s(t)})}}else{if("set"!==a.method)throw new Error('The given method "'.concat(a.method,'" is not supported'));{const{params:{delay:r,now:s,timerId:n,timerType:m}}=a;if("interval"===m)((t,r,s)=>{const{expected:n,remainingDelay:a}=o(t,s);e.set(r,setTimeout(i,a,e,r,n,"interval"))})(r,n,s);else{if("timeout"!==m)throw new Error('The given type "'.concat(m,'" is not supported'));((e,r,s)=>{const{expected:n,remainingDelay:a}=o(e,s);t.set(r,setTimeout(i,a,t,r,n,"timeout"))})(r,n,s)}}}}catch(e){postMessage({error:{message:e.message},id:a.id,result:null})}}))})();`; // tslint:disable-line:max-line-length
 
     const loadOrReturnBroker = createLoadOrReturnBroker(load, worker);
     const clearInterval = (timerId) => loadOrReturnBroker().clearInterval(timerId);
