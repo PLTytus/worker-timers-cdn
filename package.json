@@ -1,0 +1,21 @@
+{
+  "name": "worker-timers-cdn",
+  "version": "1.0.0",
+  "description": "",
+  "main": "rollup.config.js",
+  "scripts": {
+    "build": "rollup -c",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "PLTytus",
+  "license": "ISC",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "26.0.1",
+    "@rollup/plugin-node-resolve": "15.2.3",
+    "rollup": "4.18.0"
+  },
+  "dependencies": {
+    "worker-timers": "7.1.8"
+  }
+}

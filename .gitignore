@@ -1,0 +1,5 @@
+node_modules/**
+!node_modules/.gitkeep
+test.html
+.vscode/*
+package-lock.json
