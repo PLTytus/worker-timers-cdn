@@ -156,10 +156,10 @@ var WorkerTimers = (function (exports) {
                 });
             }
         };
-        const setInterval = (func, delay = 0) => {
+        const setInterval = (func, delay = 0, ...args) => {
             const timerId = generateUniqueNumber(scheduledIntervalFunctions);
             scheduledIntervalFunctions.set(timerId, () => {
-                func();
+                func(...args);
                 // Doublecheck if the interval should still be rescheduled because it could have been cleared inside of func().
                 if (typeof scheduledIntervalFunctions.get(timerId) === 'function') {
                     worker.postMessage({
@@ -186,9 +186,9 @@ var WorkerTimers = (function (exports) {
             });
             return timerId;
         };
-        const setTimeout = (func, delay = 0) => {
+        const setTimeout = (func, delay = 0, ...args) => {
             const timerId = generateUniqueNumber(scheduledTimeoutFunctions);
-            scheduledTimeoutFunctions.set(timerId, func);
+            scheduledTimeoutFunctions.set(timerId, () => func(...args));
             worker.postMessage({
                 id: null,
                 method: 'set',
