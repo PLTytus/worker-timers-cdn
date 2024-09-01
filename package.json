@@ -13,9 +13,9 @@
   "devDependencies": {
     "@rollup/plugin-commonjs": "26.0.1",
     "@rollup/plugin-node-resolve": "15.2.3",
-    "rollup": "4.20.0"
+    "rollup": "4.21.2"
   },
   "dependencies": {
-    "worker-timers": "8.0.4"
+    "worker-timers": "8.0.5"
   }
 }
