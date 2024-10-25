@@ -16,6 +16,6 @@
     "rollup": "4.24.0"
   },
   "dependencies": {
-    "worker-timers": "8.0.9"
+    "worker-timers": "8.0.10"
   }
 }
