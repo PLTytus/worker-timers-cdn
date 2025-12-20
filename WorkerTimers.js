@@ -58,47 +58,7 @@ var WorkerTimers = (function (exports) {
     const cache = createCache(LAST_NUMBER_WEAK_MAP);
     const generateUniqueNumber = createGenerateUniqueNumber(cache, LAST_NUMBER_WEAK_MAP);
 
-    const isMessagePort = (sender) => {
-        return typeof sender.start === 'function';
-    };
-
-    const PORT_MAP = new WeakMap();
-
-    const extendBrokerImplementation = (partialBrokerImplementation) => ({
-        ...partialBrokerImplementation,
-        connect: ({ call }) => {
-            return async () => {
-                const { port1, port2 } = new MessageChannel();
-                const portId = await call('connect', { port: port1 }, [port1]);
-                PORT_MAP.set(port2, portId);
-                return port2;
-            };
-        },
-        disconnect: ({ call }) => {
-            return async (port) => {
-                const portId = PORT_MAP.get(port);
-                if (portId === undefined) {
-                    throw new Error('The given port is not connected.');
-                }
-                await call('disconnect', { portId });
-            };
-        },
-        isSupported: ({ call }) => {
-            return () => call('isSupported');
-        }
-    });
-
-    const ONGOING_REQUESTS = new WeakMap();
-    const createOrGetOngoingRequests = (sender) => {
-        if (ONGOING_REQUESTS.has(sender)) {
-            // @todo TypeScript needs to be convinced that has() works as expected.
-            return ONGOING_REQUESTS.get(sender);
-        }
-        const ongoingRequests = new Map();
-        ONGOING_REQUESTS.set(sender, ongoingRequests);
-        return ongoingRequests;
-    };
-    const createBroker = (brokerImplementation) => {
+    const createBrokerFactory = (createOrGetOngoingRequests, extendBrokerImplementation, generateUniqueNumber, isMessagePort) => (brokerImplementation) => {
         const fullBrokerImplementation = extendBrokerImplementation(brokerImplementation);
         return (sender) => {
             const ongoingRequests = createOrGetOngoingRequests(sender);
@@ -140,6 +100,46 @@ var WorkerTimers = (function (exports) {
             return { ...functions };
         };
     };
+
+    const createCreateOrGetOngoingRequests = (ongoingRequestsMap) => (sender) => {
+        if (ongoingRequestsMap.has(sender)) {
+            // @todo TypeScript needs to be convinced that has() works as expected.
+            return ongoingRequestsMap.get(sender);
+        }
+        const ongoingRequests = new Map();
+        ongoingRequestsMap.set(sender, ongoingRequests);
+        return ongoingRequests;
+    };
+
+    const createExtendBrokerImplementation = (portMap) => (partialBrokerImplementation) => ({
+        ...partialBrokerImplementation,
+        connect: ({ call }) => {
+            return async () => {
+                const { port1, port2 } = new MessageChannel();
+                const portId = await call('connect', { port: port1 }, [port1]);
+                portMap.set(port2, portId);
+                return port2;
+            };
+        },
+        disconnect: ({ call }) => {
+            return async (port) => {
+                const portId = portMap.get(port);
+                if (portId === undefined) {
+                    throw new Error('The given port is not connected.');
+                }
+                await call('disconnect', { portId });
+            };
+        },
+        isSupported: ({ call }) => {
+            return () => call('isSupported');
+        }
+    });
+
+    const isMessagePort = (sender) => {
+        return typeof sender.start === 'function';
+    };
+
+    const createBroker = createBrokerFactory(createCreateOrGetOngoingRequests(new WeakMap()), createExtendBrokerImplementation(new WeakMap()), generateUniqueNumber, isMessagePort);
 
     const createClearIntervalFactory = (scheduledIntervalsState) => (clear) => (timerId) => {
         if (typeof scheduledIntervalsState.get(timerId) === 'symbol') {
@@ -232,7 +232,7 @@ var WorkerTimers = (function (exports) {
     };
 
     // This is the minified and stringified code of the worker-timers-worker package.
-    const worker = `(()=>{var e={455:function(e,t){!function(e){"use strict";var t=function(e){return function(t){var r=e(t);return t.add(r),r}},r=function(e){return function(t,r){return e.set(t,r),r}},n=void 0===Number.MAX_SAFE_INTEGER?9007199254740991:Number.MAX_SAFE_INTEGER,o=536870912,s=2*o,a=function(e,t){return function(r){var a=t.get(r),i=void 0===a?r.size:a<s?a+1:0;if(!r.has(i))return e(r,i);if(r.size<o){for(;r.has(i);)i=Math.floor(Math.random()*s);return e(r,i)}if(r.size>n)throw new Error("Congratulations, you created a collection of unique numbers which uses all available integers!");for(;r.has(i);)i=Math.floor(Math.random()*n);return e(r,i)}},i=new WeakMap,u=r(i),c=a(u,i),l=t(c);e.addUniqueNumber=l,e.generateUniqueNumber=c}(t)}},t={};function r(n){var o=t[n];if(void 0!==o)return o.exports;var s=t[n]={exports:{}};return e[n].call(s.exports,s,s.exports,r),s.exports}(()=>{"use strict";const e=-32603,t=-32602,n=-32601,o=(e,t)=>Object.assign(new Error(e),{status:t}),s=t=>o('The handler of the method called "'.concat(t,'" returned an unexpected result.'),e),a=(t,r)=>async({data:{id:a,method:i,params:u}})=>{const c=r[i];try{if(void 0===c)throw(e=>o('The requested method called "'.concat(e,'" is not supported.'),n))(i);const r=void 0===u?c():c(u);if(void 0===r)throw(t=>o('The handler of the method called "'.concat(t,'" returned no required result.'),e))(i);const l=r instanceof Promise?await r:r;if(null===a){if(void 0!==l.result)throw s(i)}else{if(void 0===l.result)throw s(i);const{result:e,transferables:r=[]}=l;t.postMessage({id:a,result:e},r)}}catch(e){const{message:r,status:n=-32603}=e;t.postMessage({error:{code:n,message:r},id:a})}};var i=r(455);const u=new Map,c=(e,r,n)=>({...r,connect:({port:t})=>{t.start();const n=e(t,r),o=(0,i.generateUniqueNumber)(u);return u.set(o,()=>{n(),t.close(),u.delete(o)}),{result:o}},disconnect:({portId:e})=>{const r=u.get(e);if(void 0===r)throw(e=>o('The specified parameter called "portId" with the given value "'.concat(e,'" does not identify a port connected to this worker.'),t))(e);return r(),{result:null}},isSupported:async()=>{if(await new Promise(e=>{const t=new ArrayBuffer(0),{port1:r,port2:n}=new MessageChannel;r.onmessage=({data:t})=>e(null!==t),n.postMessage(t,[t])})){const e=n();return{result:e instanceof Promise?await e:e}}return{result:!1}}}),l=(e,t,r=()=>!0)=>{const n=c(l,t,r),o=a(e,n);return e.addEventListener("message",o),()=>e.removeEventListener("message",o)},d=(e,t)=>r=>{const n=t.get(r);if(void 0===n)return Promise.resolve(!1);const[o,s]=n;return e(o),t.delete(r),s(!1),Promise.resolve(!0)},f=(e,t,r,n)=>(o,s,a)=>{const i=o+s-t.timeOrigin,u=i-t.now();return new Promise(t=>{e.set(a,[r(n,u,i,e,t,a),t])})},m=new Map,h=d(globalThis.clearTimeout,m),p=new Map,v=d(globalThis.clearTimeout,p),w=((e,t)=>{const r=(n,o,s,a)=>{const i=n-e.now();i>0?o.set(a,[t(r,i,n,o,s,a),s]):(o.delete(a),s(!0))};return r})(performance,globalThis.setTimeout),g=f(m,performance,globalThis.setTimeout,w),T=f(p,performance,globalThis.setTimeout,w);l(self,{clear:async({timerId:e,timerType:t})=>({result:await("interval"===t?h(e):v(e))}),set:async({delay:e,now:t,timerId:r,timerType:n})=>({result:await("interval"===n?g:T)(e,t,r)})})})()})();`; // tslint:disable-line:max-line-length
+    const worker = `(()=>{var e={455(e,t){!function(e){"use strict";var t=function(e){return function(t){var r=e(t);return t.add(r),r}},r=function(e){return function(t,r){return e.set(t,r),r}},n=void 0===Number.MAX_SAFE_INTEGER?9007199254740991:Number.MAX_SAFE_INTEGER,o=536870912,s=2*o,a=function(e,t){return function(r){var a=t.get(r),i=void 0===a?r.size:a<s?a+1:0;if(!r.has(i))return e(r,i);if(r.size<o){for(;r.has(i);)i=Math.floor(Math.random()*s);return e(r,i)}if(r.size>n)throw new Error("Congratulations, you created a collection of unique numbers which uses all available integers!");for(;r.has(i);)i=Math.floor(Math.random()*n);return e(r,i)}},i=new WeakMap,u=r(i),c=a(u,i),l=t(c);e.addUniqueNumber=l,e.generateUniqueNumber=c}(t)}},t={};function r(n){var o=t[n];if(void 0!==o)return o.exports;var s=t[n]={exports:{}};return e[n].call(s.exports,s,s.exports,r),s.exports}(()=>{"use strict";const e=-32603,t=-32602,n=-32601,o=(e,t)=>Object.assign(new Error(e),{status:t}),s=t=>o('The handler of the method called "'.concat(t,'" returned an unexpected result.'),e),a=(t,r)=>async({data:{id:a,method:i,params:u}})=>{const c=r[i];try{if(void 0===c)throw(e=>o('The requested method called "'.concat(e,'" is not supported.'),n))(i);const r=void 0===u?c():c(u);if(void 0===r)throw(t=>o('The handler of the method called "'.concat(t,'" returned no required result.'),e))(i);const l=r instanceof Promise?await r:r;if(null===a){if(void 0!==l.result)throw s(i)}else{if(void 0===l.result)throw s(i);const{result:e,transferables:r=[]}=l;t.postMessage({id:a,result:e},r)}}catch(e){const{message:r,status:n=-32603}=e;t.postMessage({error:{code:n,message:r},id:a})}};var i=r(455);const u=new Map,c=(e,r,n)=>({...r,connect:({port:t})=>{t.start();const n=e(t,r),o=(0,i.generateUniqueNumber)(u);return u.set(o,()=>{n(),t.close(),u.delete(o)}),{result:o}},disconnect:({portId:e})=>{const r=u.get(e);if(void 0===r)throw(e=>o('The specified parameter called "portId" with the given value "'.concat(e,'" does not identify a port connected to this worker.'),t))(e);return r(),{result:null}},isSupported:async()=>{if(await new Promise(e=>{const t=new ArrayBuffer(0),{port1:r,port2:n}=new MessageChannel;r.onmessage=({data:t})=>e(null!==t),n.postMessage(t,[t])})){const e=n();return{result:e instanceof Promise?await e:e}}return{result:!1}}}),l=(e,t,r=()=>!0)=>{const n=c(l,t,r),o=a(e,n);return e.addEventListener("message",o),()=>e.removeEventListener("message",o)},d=(e,t)=>r=>{const n=t.get(r);if(void 0===n)return Promise.resolve(!1);const[o,s]=n;return e(o),t.delete(r),s(!1),Promise.resolve(!0)},m=(e,t,r,n)=>(o,s,a)=>{const i=o+s-t.timeOrigin,u=i-t.now();return new Promise(t=>{e.set(a,[r(n,u,i,e,t,a),t])})},f=new Map,h=d(globalThis.clearTimeout,f),p=new Map,v=d(globalThis.clearTimeout,p),w=((e,t)=>{const r=(n,o,s,a)=>{const i=n-e.now();i>0?o.set(a,[t(r,i,n,o,s,a),s]):(o.delete(a),s(!0))};return r})(performance,globalThis.setTimeout),g=m(f,performance,globalThis.setTimeout,w),T=m(p,performance,globalThis.setTimeout,w);l(self,{clear:async({timerId:e,timerType:t})=>({result:await("interval"===t?h(e):v(e))}),set:async({delay:e,now:t,timerId:r,timerType:n})=>({result:await("interval"===n?g:T)(e,t,r)})})})()})();`; // tslint:disable-line:max-line-length
 
     const loadOrReturnBroker = createLoadOrReturnBroker(load, worker);
     const clearInterval = (timerId) => loadOrReturnBroker().clearInterval(timerId);
