@@ -11,11 +11,11 @@
   "author": "PLTytus",
   "license": "ISC",
   "devDependencies": {
-    "@rollup/plugin-commonjs": "29.0.2",
+    "@rollup/plugin-commonjs": "29.0.3",
     "@rollup/plugin-node-resolve": "16.0.3",
-    "rollup": "4.59.0"
+    "rollup": "4.62.0"
   },
   "dependencies": {
-    "worker-timers": "8.0.31"
+    "worker-timers": "8.0.32"
   }
 }
